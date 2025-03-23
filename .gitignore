@@ -1,0 +1,13 @@
+# Node modules
+node_modules/
+
+# Logs
+logs
+*.log
+
+# IDE and editor folders
+.idea/
+.vscode/
+*.njsproj
+*.sln
+.DS_Store
