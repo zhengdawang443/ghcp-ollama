@@ -87,71 +87,25 @@ The server provides the following endpoints:
   }
   ```
 
-Since the server implements the same API endpoints as Ollama, you can use it with any tool that supports Ollama, such as:
+Since the server implements the same API endpoints as Ollama, you can use it with any tool that supports Ollama.
 
-1. **LangChain**: Set your base URL to the GHCP-Ollama server
-2. **Ollama Web UI**: Point it to your GHCP-Ollama server instead of Ollama
-3. **CLI tools**: Tools like `ollama-cli` will work with GHCP-Ollama
+You can run some tests after server started:
 
-Example with curl:
-
+-  List available models
 ```bash
-# List available models
 curl http://localhost:11434/api/tags
+````
 
-# Chat with text messages
-curl http://localhost:11434/api/chat -d '{
-  "model": "claude-3.5-sonnet",
-  "messages": [
-    {
-      "role": "user",
-      "content": "why is the sky blue?"
-    },
-    {
-      "role": "assistant",
-      "content": "due to rayleigh scattering."
-    },
-    {
-      "role": "user",
-      "content": "how is that different than mie scattering?"
-    }
-  ]
-}'
+- Chat with text messages
+```bash
+node src/ollama_textmsg_test.js
+```
 
-# Chat with tools
-curl http://localhost:11434/api/chat -d '{
-  "model": "llama3.2",
-  "messages": [
-    {
-      "role": "user",
-      "content": "What is the weather today in Paris?"
-    }
-  ],
-  "stream": false,
-  "tools": [
-    {
-      "type": "function",
-      "function": {
-        "name": "get_current_weather",
-        "description": "Get the current weather for a location",
-        "parameters": {
-          "type": "object",
-          "properties": {
-            "location": {
-              "type": "string",
-              "description": "The location to get the weather for, e.g. San Francisco, CA"
-            },
-            "format": {
-              "type": "string",
-              "description": "The format to return the weather in, e.g. 'celsius' or 'fahrenheit'",
-              "enum": ["celsius", "fahrenheit"]
-            }
-          },
-          "required": ["location", "format"]
-        }
-      }
-    }
-  ]
-}'
-     
+- Chat with tools
+```bash
+node src/ollama_tools_test.js
+```
+- Chat with image input
+```bash
+node src/ollama_image_test.js
 ```

@@ -95,13 +95,13 @@ export class CopilotChatClient {
         "Copilot-Integration-Id": editorConfig.copilotIntegrationId,
         "Editor-Version": `${editorConfig.editorInfo.name}/${editorConfig.editorInfo.version}`,
       };
-      const payload = {
-        ...options,
-        model: options.model || defaultModel.modelConfig.modelId,
-        messages: messages,
-        tools: tools,
-        stream: stream,
-      };
+      const payload = this.#convertToOpenaiReq(
+        messages,
+        tools,
+        options,
+        options.model || defaultModel.modelConfig.modelId,
+        stream,
+      );
 
       return await sendHttpStreamingRequest(
         url.hostname,
@@ -137,7 +137,43 @@ export class CopilotChatClient {
     }
   }
 
-  #parseToOllamaResp(buffer) {
+  #convertToOpenaiReq(messages, tools, options, model, stream) {
+    const openaiReq = {
+      ...options,
+      model: model,
+      tools: tools,
+      stream: stream,
+    };
+    if (messages.some((message) => message.images)) {
+      openaiReq.messages = messages.map((message) => {
+        if (!message.images) {
+          return message;
+        }
+        const content = [
+          {
+            type: "text",
+            text: message.content,
+          },
+        ];
+        const images = message.images.map((base64Image) => {
+          return {
+            type: "image_url",
+            image_url: `data:image/jpeg;base64,${base64Image}`,
+          };
+        });
+        content.push(...images);
+        return {
+          role: message.role,
+          content: content,
+        };
+      });
+    } else {
+      openaiReq.messages = messages;
+    }
+    return openaiReq;
+  }
+
+  #parseToOllamaResp(buffer, incompleteResult) {
     const respMessages = buffer.split("\n\n");
     const remainBuffer = respMessages.pop();
     let parsedMessages = [];
@@ -151,19 +187,39 @@ export class CopilotChatClient {
           const data = line.slice(6);
           if (data === "[DONE]") {
             const parsedMessage = {
+              ...incompleteResult,
               done: true,
-              message: {
-                role: "assistant",
-                content: "",
-              },
+              message: {},
             };
             parsedMessages.push(parsedMessage);
+            incompleteResult = {};
             break;
           }
           try {
             const parsed = JSON.parse(data);
             if (parsed.choices && parsed.choices[0]) {
               const choice = parsed.choices[0];
+              if (choice.finish_reason) {
+                if (
+                  choice.finish_reason === "tool_calls" &&
+                  incompleteResult.arguments
+                ) {
+                  incompleteResult.arguments = JSON.parse(
+                    incompleteResult.arguments,
+                  );
+                }
+                const usage = parsed.usage;
+                if (usage) {
+                  incompleteResult = {
+                    ...incompleteResult,
+                    done_reason: "stop",
+                    model: parsed.model,
+                    created: parsed.created,
+                    prompt_eval_count: usage.prompt_tokens || 0,
+                    eval_count: usage.completion_tokens || 0,
+                  };
+                }
+              }
               if (choice.delta) {
                 const parsedMessage = {
                   done: false,
@@ -175,6 +231,18 @@ export class CopilotChatClient {
                   created: parsed.created,
                 };
                 parsedMessages.push(parsedMessage);
+                if (choice.delta.tool_calls && choice.delta.tool_calls[0]) {
+                  const toolFunc = choice.delta.tool_calls[0].function;
+                  if (toolFunc.name) {
+                    incompleteResult.name = toolFunc.name;
+                  }
+                  if (toolFunc.arguments) {
+                    if (!incompleteResult.arguments) {
+                      incompleteResult.arguments = "";
+                    }
+                    incompleteResult.arguments += toolFunc.arguments;
+                  }
+                }
               }
             }
           } catch (error) {

@@ -127,7 +127,10 @@ export async function sendHttpStreamingRequest(
         });
       }
 
+      // buffer is used to hold the incomplete data inputted to the parseResp function
       let buffer = "";
+      // incompleteResult is used to hold the incomplete data outputted by parseResp function
+      let incompleteResult = {};
 
       res.on("data", (chunk) => {
         buffer += chunk.toString();
@@ -138,7 +141,7 @@ export async function sendHttpStreamingRequest(
           typeof onResponse === "function"
         ) {
           try {
-            const parsed = parseResp(buffer);
+            const parsed = parseResp(buffer, incompleteResult);
             onResponse(parsed.parsedMessages, "data");
             buffer = parsed.remainBuffer;
           } catch (error) {
@@ -155,7 +158,7 @@ export async function sendHttpStreamingRequest(
           typeof onResponse === "function"
         ) {
           try {
-            const parsed = parseResp(buffer);
+            const parsed = parseResp(buffer, incompleteResult);
             onResponse(parsed.parsedMessages, "end");
           } catch (error) {
             reject(new Error(`${respProcErrorMsg}: ${error.message}`));
