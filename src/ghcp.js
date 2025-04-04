@@ -1,139 +1,159 @@
-import { CopilotLSPClient } from './lsp-client.js';
-import { CopilotAuth } from './auth.js';
-import { CopilotModels } from './models.js';
-import { CopilotChat } from './chat.js';
-import minimist from 'minimist';
+import minimist from "minimist";
+import { CopilotAuth } from "./utils/auth_client.js";
+import { CopilotLSPClient } from "./utils/lsp_client.js";
+import { CopilotModels } from "./utils/model_client.js";
+import { CopilotChatClient } from "./utils/chat_client.js";
 
-const argv = minimist(process.argv.slice(2), {
-  string: ['serverPath', 'command', 'message', 'model'],
-  boolean: ['help'],
+const args = process.argv.slice(2);
+const command = args[0] || "status";
+const argv = minimist(args.slice(1), {
+  string: ["message", "model"],
+  boolean: ["help"],
   alias: {
-    h: 'help',
-    c: 'command',
-    m: 'message',
-    p: 'serverPath'
+    h: "help",
+    m: "message",
   },
-  default: {
-    command: 'status'
-  }
 });
+argv.command = command;
 
-// Display help
 if (argv.help) {
   console.log(`
 GitHub Copilot CLI Tool
+
+Usage: node ghcp.js <command> [options]
 
 Commands:
   status                Check authentication status
   signin                Sign in to GitHub Copilot
   signout               Sign out from GitHub Copilot
   models                List available models
-  setmodel <model>      Set the active model
-  chat <message>        Send a chat message to Copilot
+  getmodel              Get the active model
+  setmodel              Set the active model (requires --model)
+  chat                  Send a chat message to Copilot (requires --message)
 
 Options:
-  --serverPath, -p      Path to the language-server.js file
   --message, -m         Message for chat command
   --model               Model ID for setmodel command
   --help, -h            Show this help message
+
+Examples:
+  node ghcp.js status
+  node ghcp.js signin
+  node ghcp.js setmodel --model gpt-4
+  node ghcp.js chat --message "How do I read a file in Node.js?"
   `);
   process.exit(0);
 }
 
+let lspClient;
+
 async function main() {
-  // Create the LSP client
-  const lspClient = new CopilotLSPClient({
-    serverPath: argv.serverPath,
-    onNotification: (method, params) => {
-      if (method === 'statusNotification') {
-        if (params.status === 'Error') {
-          console.error(`Copilot status: ${params.message}`);
-        }
-      }
-    }
-  });
+  lspClient = new CopilotLSPClient();
 
   try {
-    // Start the LSP client
     await lspClient.start();
 
-    // Create service instances
     const auth = new CopilotAuth(lspClient);
     const models = new CopilotModels(lspClient);
-    const chat = new CopilotChat(lspClient);
+    const chatClient = new CopilotChatClient(lspClient);
 
-    // Handle different commands
     switch (argv.command) {
-      case 'status': {
+      case "status": {
         const status = await auth.checkStatus();
-        if (status.user) {
+        if (status.user && status.authenticated) {
           console.log(`Signed in as GitHub user: ${status.user}`);
         } else {
-          console.log('Not signed in');
+          console.log("Not signed in");
+        }
+        if (status.tokenValid) {
+          console.log("GitHub token is valid");
+        } else if (status.tokenExpired) {
+          console.log("GitHub token is expired");
+        } else {
+          console.log("GitHub token is not valid");
         }
         break;
       }
 
-      case 'signin': {
+      case "signin": {
         await auth.signIn();
         break;
       }
 
-      case 'signout': {
+      case "signout": {
         await auth.signOut();
         break;
       }
 
-      case 'models': {
-        const modelInfo = await models.getAvailableModels();
-        if (modelInfo.success) {
-          console.log('Available models:');
-          modelInfo.availableModels.forEach(model => {
-            console.log(`- ${model.name} (${model.id}): ${model.version}`);
-          });
+      case "models": {
+        const modelsInfo = await models.getAvailableModels();
+        if (modelsInfo.success) {
+          console.log("Available models:");
+          console.log(JSON.stringify(modelsInfo.availableModels, null, 2));
         } else {
-          console.error('Failed to get models:', modelInfo.error);
+          console.error("Failed to get models:", modelsInfo.error);
         }
         break;
       }
 
-      case 'setmodel': {
+      case "getmodel": {
+        const currentModel = await models.getCurrentModel();
+        if (currentModel.success) {
+          console.log("Current active model:");
+          console.log(JSON.stringify(currentModel.modelConfig, null, 2));
+        } else {
+          console.error("Failed to get current model:", currentModel.error);
+        }
+        break;
+      }
+
+      case "setmodel": {
         const modelId = argv.model;
         if (!modelId) {
-          console.error('Model ID is required. Use --model <modelId>');
+          console.error("Model ID is required. Use --model <modelId>");
           break;
         }
 
         const result = await models.setModel(modelId);
         if (result.success) {
-          console.log(`Set active model to: ${modelId}`);
+          console.log("Set active model to:");
+          console.log(JSON.stringify(result.modelConfig, null, 2));
         } else {
-          console.error('Failed to set model:', result.error);
+          console.error("Failed to set model:", result.error);
         }
         break;
       }
 
-      case 'chat': {
+      case "chat": {
         const message = argv.message;
         if (!message) {
-          console.error('Message is required. Use --message <message>');
+          console.error("Message is required. Use --message <message>");
           break;
         }
-        console.log('Sending message to Copilot...\n');
+        console.log("Sending message to Copilot...\n");
         const messages = [
-          { role: 'system', content: 'You are GitHub Copilot, an AI coding assistant.' },
-          { role: 'user', content: message }
+          {
+            role: "system",
+            content: "You are GitHub Copilot, an AI coding assistant.",
+          },
+          { role: "user", content: message },
         ];
-        await chat.sendMessage(messages, {}, (response) => {
-          if (response.message?.content) {
-            process.stdout.write(response.message.content);
-          }
-          if (response.done) {
-            console.log('\n\n[Response complete]');
-            cleanup();
-          }
-        });
-        // process.stdin.resume();
+        await chatClient.sendStreamingRequest(
+          messages,
+          (respMessages, _) => {
+            for (const respMessage of respMessages) {
+              if (respMessage.message?.content) {
+                process.stdout.write(respMessage.message.content);
+              }
+              if (respMessage.done) {
+                console.log("\n\n[Response complete]");
+                cleanup();
+              }
+            }
+          },
+          { temperature: 0.5 },
+        );
+        process.stdin.resume();
         break;
       }
 
@@ -142,35 +162,33 @@ async function main() {
         break;
     }
   } catch (error) {
-    console.error('Error:', error.message);
+    console.error("Error:", error.message);
   } finally {
     // Don't stop if we're streaming a chat message
-    if (argv.command !== 'chat') {
+    if (argv.command !== "chat") {
       cleanup();
     }
   }
 }
 
 function cleanup() {
-  if (lspClient) {
+  if (lspClient && lspClient.initialized) {
     lspClient.stop();
   }
   process.exit(0);
 }
 
-// Handle process termination
-process.on('SIGINT', () => {
-  console.log('\nReceived SIGINT. Shutting down...');
+process.on("SIGINT", () => {
+  console.log("\nReceived SIGINT. Shutting down...");
   cleanup();
 });
 
-process.on('SIGTERM', () => {
-  console.log('\nReceived SIGTERM. Shutting down...');
+process.on("SIGTERM", () => {
+  console.log("\nReceived SIGTERM. Shutting down...");
   cleanup();
 });
 
-let lspClient;
-main().catch(error => {
-  console.error('Fatal error:', error);
+main().catch((error) => {
+  console.error("Fatal error:", error);
   cleanup();
 });

@@ -1,6 +1,7 @@
 # GHCP-Ollama
 
-A Node.js client for interacting with GitHub Copilot LSP server API with Ollama-compatible API endpoints.
+The [Ollama](https://github.com/ollama-dev/ollama) project provides a convenient way to interact with various LLMs (Large Language Models) via a simple API. 
+This project aims to provide an Ollama-compatible API for interacting with the LLMs of GitHub Copilot.
 
 ## Features
 
@@ -21,7 +22,7 @@ A Node.js client for interacting with GitHub Copilot LSP server API with Ollama-
 ```bash
 # Clone the repository
 git clone https://github.com/ljie-PI/ghcp-ollama.git
-cd src
+git submodule update --init --recursive
 
 # Install dependencies
 npm install
@@ -35,22 +36,25 @@ There are two main ways to use this tool:
 
 ```bash
 # Check your authentication status
-node ghcp.js --command status
+node src/ghcp.js status
 
 # Sign in to GitHub Copilot
-node ghcp.js --command signin
+node src/ghcp.js signin
 
 # Sign out from GitHub Copilot
-node ghcp.js --command signout
+node src/ghcp.js signout
 
 # List available models
-node ghcp.js --command models
+node src/ghcp.js models
+
+# Get the active model
+node src/ghcp.js getmodel
 
 # Set the active model
-node ghcp.js --command setmodel --model claude-3.5-sonnet
+node src/ghcp.js setmodel --model gpt-4o-2024-11-20
 
 # Send a chat message to Copilot
-node ghcp.js --command chat --message "Write quick sort algo in python"
+node src/ghcp.js chat --message "Write quick sort algo in python"
 ```
 
 ### 2. Ollama-Compatible Server
@@ -60,22 +64,9 @@ Start the server that provides Ollama-compatible API endpoints:
 ```bash
 # Using npm start (recommended)
 npm start
-
-# Start on a different port with npm
-PORT=8080 npm start
-
-# Or directly with node
-node server.js
-
-# Start on a different port with node
-PORT=8080 node server.js
 ```
 
-#### Server API Endpoints
-
 The server provides the following endpoints:
-
-##### Ollama-Compatible Endpoints
 
 - `GET /api/tags`: List available models (similar to Ollama)
 
@@ -96,22 +87,6 @@ The server provides the following endpoints:
   }
   ```
 
-## Advanced Configuration
-
-You can specify the path to the language-server.js file:
-
-```bash
-# For CLI
-node ghcp.js --command status --serverPath /path/to/language-server.js
-
-# For server
-SERVER_PATH=/path/to/language-server.js node server.js
-```
-
-## Integration with Ollama
-
-This client can be used as a bridge between Ollama and GitHub Copilot, allowing you to use Copilot models through Ollama's API.
-
 Since the server implements the same API endpoints as Ollama, you can use it with any tool that supports Ollama, such as:
 
 1. **LangChain**: Set your base URL to the GHCP-Ollama server
@@ -124,12 +99,59 @@ Example with curl:
 # List available models
 curl http://localhost:11434/api/tags
 
-# Chat with streaming
-curl -X POST http://localhost:11434/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"Write a quicksort algorithm in Python"}],"stream":true}'
+# Chat with text messages
+curl http://localhost:11434/api/chat -d '{
+  "model": "claude-3.5-sonnet",
+  "messages": [
+    {
+      "role": "user",
+      "content": "why is the sky blue?"
+    },
+    {
+      "role": "assistant",
+      "content": "due to rayleigh scattering."
+    },
+    {
+      "role": "user",
+      "content": "how is that different than mie scattering?"
+    }
+  ]
+}'
+
+# Chat with tools
+curl http://localhost:11434/api/chat -d '{
+  "model": "llama3.2",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is the weather today in Paris?"
+    }
+  ],
+  "stream": false,
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_current_weather",
+        "description": "Get the current weather for a location",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "The location to get the weather for, e.g. San Francisco, CA"
+            },
+            "format": {
+              "type": "string",
+              "description": "The format to return the weather in, e.g. 'celsius' or 'fahrenheit'",
+              "enum": ["celsius", "fahrenheit"]
+            }
+          },
+          "required": ["location", "format"]
+        }
+      }
+    }
+  ]
+}'
+     
 ```
-
-## License
-
-MIT

@@ -2,9 +2,9 @@
   "name": "ghcp-ollama",
   "version": "0.1.0",
   "description": "GitHub Copilot LSP client for authentication, models, and chat",
-  "main": "server.js",
+  "main": "src/server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node src/server.js"
   },
   "dependencies": {
     "vscode-jsonrpc": "^8.1.0",
