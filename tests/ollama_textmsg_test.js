@@ -14,7 +14,7 @@ const payload = {
       content: "how is that different than mie scattering?",
     },
   ],
-  stream: false,
+  stream: true,
 };
 
 async function chat() {
