@@ -98,14 +98,14 @@ curl http://localhost:11434/api/tags
 
 - Chat with text messages
 ```bash
-node src/ollama_textmsg_test.js
+node tests/ollama_textmsg_test.js
 ```
 
 - Chat with tools
 ```bash
-node src/ollama_tools_test.js
+node tests/ollama_tools_test.js
 ```
 - Chat with image input
 ```bash
-node src/ollama_image_test.js
+node tests/ollama_image_test.js
 ```
