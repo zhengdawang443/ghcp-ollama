@@ -56,7 +56,7 @@ function startAuthRefresh() {
   if (authRefreshInterval) {
     clearInterval(authRefreshInterval);
   }
-  // Token expires in 1 hour, refresh every 59 minutes
+  // Token expires in 30 minutes, refresh every 29 minutes
   authRefreshInterval = setInterval(
     async () => {
       try {
@@ -72,7 +72,7 @@ function startAuthRefresh() {
         console.error("Error checking auth status:", error);
       }
     },
-    59 * 60 * 1000,
+    29 * 60 * 1000,
   );
 }
 
