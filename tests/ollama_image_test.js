@@ -1,28 +1,23 @@
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from 'url';
 
 function encodeImageToBase64(imagePath) {
   const image = fs.readFileSync(imagePath);
   return image.toString("base64");
 }
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const imagePath = path.join(__dirname, "images", "vergil.jpg");
 
 const payload = {
-  model: "claude-3.5-sonnet",
+  model: "gpt-4o-2024-11-20",
   messages: [
     {
       role: "user",
-      content: [
-        {
-          type: "text",
-          text: "What do you see in this image?",
-        },
-        {
-          type: "image",
-          image: encodeImageToBase64(imagePath),
-        },
-      ],
+      content: "Who is the man in this image?",
+      images: [encodeImageToBase64(imagePath)],
     },
   ],
   stream: true,

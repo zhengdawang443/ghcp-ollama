@@ -95,6 +95,9 @@ export class CopilotChatClient {
         "Copilot-Integration-Id": editorConfig.copilotIntegrationId,
         "Editor-Version": `${editorConfig.editorInfo.name}/${editorConfig.editorInfo.version}`,
       };
+      if (messages.some((message) => message.images)) {
+        headers["Copilot-Vision-Request"] = "true";
+      }
       const payload = this.#convertToOpenaiReq(
         messages,
         tools,
@@ -158,7 +161,9 @@ export class CopilotChatClient {
         const images = message.images.map((base64Image) => {
           return {
             type: "image_url",
-            image_url: `data:image/jpeg;base64,${base64Image}`,
+            image_url: {
+              url: `data:image/jpeg;base64,${base64Image}`
+            }
           };
         });
         content.push(...images);
