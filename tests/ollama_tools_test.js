@@ -1,12 +1,6 @@
 const payload = {
-  // model: "claude-3.5-sonnet",
-  model: "hhao/qwen2.5-coder-tools:latest",
+  model: "claude-3.5-sonnet",
   messages: [
-    {
-      role: "system",
-      content:
-        "You know when to use `get_current_time` and `get_current_weather` internal tools.",
-    },
     {
       role: "user",
       content: "why is the sky blue?",

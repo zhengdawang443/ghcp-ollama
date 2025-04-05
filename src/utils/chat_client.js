@@ -162,8 +162,8 @@ export class CopilotChatClient {
           return {
             type: "image_url",
             image_url: {
-              url: `data:image/jpeg;base64,${base64Image}`
-            }
+              url: `data:image/jpeg;base64,${base64Image}`,
+            },
           };
         });
         content.push(...images);
@@ -194,8 +194,19 @@ export class CopilotChatClient {
             const parsedMessage = {
               ...incompleteResult,
               done: true,
-              message: {},
+              message: incompleteResult.message || {
+                role: "assistant",
+                content: "",
+                ...(incompleteResult.function && {
+                  tool_calls: [
+                    {
+                      function: { ...incompleteResult.function },
+                    },
+                  ],
+                }),
+              },
             };
+            delete parsedMessage.function;
             parsedMessages.push(parsedMessage);
             incompleteResult = {};
             break;
@@ -207,10 +218,11 @@ export class CopilotChatClient {
               if (choice.finish_reason) {
                 if (
                   choice.finish_reason === "tool_calls" &&
-                  incompleteResult.arguments
+                  incompleteResult.function &&
+                  incompleteResult.function.arguments
                 ) {
-                  incompleteResult.arguments = JSON.parse(
-                    incompleteResult.arguments,
+                  incompleteResult.function.arguments = JSON.parse(
+                    incompleteResult.function.arguments,
                   );
                 }
                 const usage = parsed.usage;
@@ -238,14 +250,17 @@ export class CopilotChatClient {
                 parsedMessages.push(parsedMessage);
                 if (choice.delta.tool_calls && choice.delta.tool_calls[0]) {
                   const toolFunc = choice.delta.tool_calls[0].function;
+                  if (!incompleteResult.function) {
+                    incompleteResult.function = {};
+                  }
                   if (toolFunc.name) {
-                    incompleteResult.name = toolFunc.name;
+                    incompleteResult.function.name = toolFunc.name;
                   }
                   if (toolFunc.arguments) {
-                    if (!incompleteResult.arguments) {
-                      incompleteResult.arguments = "";
+                    if (!incompleteResult.function.arguments) {
+                      incompleteResult.function.arguments = "";
                     }
-                    incompleteResult.arguments += toolFunc.arguments;
+                    incompleteResult.function.arguments += toolFunc.arguments;
                   }
                 }
               }
