@@ -191,22 +191,30 @@ export class CopilotChatClient {
         if (line.startsWith("data: ")) {
           const data = line.slice(6);
           if (data === "[DONE]") {
-            const parsedMessage = {
-              ...incompleteResult,
-              done: true,
-              message: incompleteResult.message || {
-                role: "assistant",
-                content: "",
-                ...(incompleteResult.function && {
+            if (incompleteResult.function) {
+              const toolCallMessage = {
+                done: false,
+                message: incompleteResult.message || {
+                  role: "assistant",
+                  content: "",
                   tool_calls: [
                     {
                       function: { ...incompleteResult.function },
                     },
                   ],
-                }),
+                },
+              };
+              parsedMessages.push(toolCallMessage);
+              delete incompleteResult.function;
+            }
+            const parsedMessage = {
+              ...incompleteResult,
+              done: true,
+              message: {
+                role: "assistant",
+                content: "",
               },
             };
-            delete parsedMessage.function;
             parsedMessages.push(parsedMessage);
             incompleteResult = {};
             break;
@@ -238,16 +246,18 @@ export class CopilotChatClient {
                 }
               }
               if (choice.delta) {
-                const parsedMessage = {
-                  done: false,
-                  message: {
-                    role: "assistant",
-                    content: choice.delta.content ?? "",
-                  },
-                  model: parsed.model,
-                  created: parsed.created,
-                };
-                parsedMessages.push(parsedMessage);
+                if (choice.delta.content) {
+                  const parsedMessage = {
+                    done: false,
+                    message: {
+                      role: "assistant",
+                      content: choice.delta.content ?? "",
+                    },
+                    model: parsed.model,
+                    created: parsed.created,
+                  };
+                  parsedMessages.push(parsedMessage);
+                }
                 if (choice.delta.tool_calls && choice.delta.tool_calls[0]) {
                   const toolFunc = choice.delta.tool_calls[0].function;
                   if (!incompleteResult.function) {
