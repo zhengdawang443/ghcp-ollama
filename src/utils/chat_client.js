@@ -203,6 +203,8 @@ export class CopilotChatClient {
                     },
                   ],
                 },
+                created_at:
+                  incompleteResult.createTimeString || new Date().toISOString(),
               };
               parsedMessages.push(toolCallMessage);
               delete incompleteResult.function;
@@ -221,6 +223,9 @@ export class CopilotChatClient {
           }
           try {
             const parsed = JSON.parse(data);
+            const createTimeString = parsed.created
+              ? new Date(parsed.created * 1000).toISOString()
+              : new Date().toISOString();
             if (parsed.choices && parsed.choices[0]) {
               const choice = parsed.choices[0];
               if (choice.finish_reason) {
@@ -239,7 +244,7 @@ export class CopilotChatClient {
                     ...incompleteResult,
                     done_reason: "stop",
                     model: parsed.model,
-                    created: parsed.created,
+                    created_at: createTimeString,
                     prompt_eval_count: usage.prompt_tokens || 0,
                     eval_count: usage.completion_tokens || 0,
                   };
@@ -254,7 +259,7 @@ export class CopilotChatClient {
                       content: choice.delta.content ?? "",
                     },
                     model: parsed.model,
-                    created: parsed.created,
+                    created_at: createTimeString,
                   };
                   parsedMessages.push(parsedMessage);
                 }
