@@ -186,6 +186,53 @@ async function handleChatRequest(req, res) {
   }
 }
 
+async function handleOpenAIChatRequest(req, res) {
+  try {
+    const stream = req.body.stream !== false;
+    if (stream) {
+      // Set headers for response
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.write("\n");
+
+      const chatResult = await chatClient.sendStreamingOpenaiRequest(
+        req.body,
+        (respMessages, event) => {
+          for (const respMessage of respMessages) {
+            res.write(`data: ${JSON.stringify(respMessage)}\n\n`);
+          }
+          res.flush && res.flush();
+          if (event === "end") {
+            res.write("data: [DONE]\n\n");
+            res.end();
+          }
+        },
+      );
+
+      if (!chatResult.success) {
+        const resp = {
+          error: "Failed to generate text",
+          message: chatResult.error,
+        };
+        res.write(`data: ${JSON.stringify(resp)}\n\n`);
+        res.end();
+      }
+    } else {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Please request with streaming enabled",
+      });
+    }
+  } catch (error) {
+    console.error("Error in chat request:", error);
+    return res.status(500).json({
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+}
+
 function shutdown() {
   console.log("Shutting down server...");
 
@@ -209,6 +256,9 @@ app.get("/api/tags", ensureCopilotSetup, async (req, res) => {
 });
 app.post("/api/chat", ensureCopilotSetup, (req, res) => {
   return handleChatRequest(req, res);
+});
+app.post("/v1/chat/completions", ensureCopilotSetup, (req, res) => {
+  return handleOpenAIChatRequest(req, res);
 });
 
 // Add enhanced error handling middleware

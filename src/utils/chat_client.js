@@ -33,26 +33,9 @@ export class CopilotChatClient {
     refreshToken = true,
   ) {
     try {
-      // Quick check if the token is valid
-      const { token, _ } = this.auth.getGithubToken();
-      if (!token) {
-        if (refreshToken) {
-          console.log("GitHub token not valid, attempting to refresh...");
-          await this.auth.signIn(true);
-          const newStatus = await this.auth.checkStatus();
-          if (!newStatus.authenticated || !newStatus.tokenValid) {
-            return {
-              success: false,
-              error: "Failed to sign in and refresh GitHub token",
-            };
-          }
-          console.log("GitHub token refreshed successfully");
-        } else {
-          return {
-            success: false,
-            error: "GitHub token not valid",
-          };
-        }
+      const tokenStatus = await this.#checkGithubToken(refreshToken);
+      if (!tokenStatus.success) {
+        return tokenStatus;
       }
 
       return await this.#doSendRequest(messages, onResponse, options, tools);
@@ -63,6 +46,57 @@ export class CopilotChatClient {
         error: error.message,
       };
     }
+  }
+
+  /**
+   * Sends a streaming OpenAI chat request to the Copilot API.
+   *
+   * @param {Array} payload - The request of OpanAI request
+   * @param {Function} onResponse - Callback function to handle streaming responses
+   * @param {boolean} [refreshToken=true] - Whether to attempt token refresh if invalid
+   *
+   * @returns {Promise<{success: boolean, error?: string}>} Result of the streaming request
+   */
+  async sendStreamingOpenaiRequest(payload, onResponse, refreshToken = true) {
+    try {
+      const tokenStatus = await this.#checkGithubToken(refreshToken);
+      if (!tokenStatus.success) {
+        return tokenStatus;
+      }
+
+      return await this.#doSendOpenaiRequest(payload, onResponse);
+    } catch (error) {
+      console.error("Error sending chat messages:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  async #checkGithubToken(refreshToken) {
+    // Quick check if the token is valid
+    const { token, _ } = this.auth.getGithubToken();
+    if (!token) {
+      if (refreshToken) {
+        console.log("GitHub token not valid, attempting to refresh...");
+        await this.auth.signIn(true);
+        const newStatus = await this.auth.checkStatus();
+        if (!newStatus.authenticated || !newStatus.tokenValid) {
+          return {
+            success: false,
+            error: "Failed to sign in and refresh GitHub token",
+          };
+        }
+        console.log("GitHub token refreshed successfully");
+      } else {
+        return {
+          success: false,
+          error: "GitHub token not valid",
+        };
+      }
+    }
+    return { success: true };
   }
 
   async #doSendRequest(
@@ -114,6 +148,62 @@ export class CopilotChatClient {
         payload,
         onResponse,
         this.#parseToOllamaResp,
+      );
+    } catch (error) {
+      console.error("Error sending chat messages:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  async #doSendOpenaiRequest(payload, onResponse) {
+    const { token, endpoint } = this.auth.getGithubToken();
+    if (!token) {
+      return {
+        success: false,
+        error: "Could not determine GitHub token",
+      };
+    }
+    if (!endpoint) {
+      return {
+        success: false,
+        error: "Could not determine API endpoint",
+      };
+    }
+
+    try {
+      const url = new URL(`${endpoint}/chat/completions`);
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "Copilot-Integration-Id": editorConfig.copilotIntegrationId,
+        "Editor-Version": `${editorConfig.editorInfo.name}/${editorConfig.editorInfo.version}`,
+      };
+      const containsImageInput = payload.messages.some((message) => {
+        const content = message.content;
+        if (content && Array.isArray(content)) {
+          return content.some((item) => item.type === "image_url");
+        }
+        return false;
+      });
+      if (containsImageInput) {
+        headers["Copilot-Vision-Request"] = "true";
+      }
+      const defaultModel = await this.#getDefaultModel();
+      if (!payload.model) {
+        payload.model = defaultModel.modelConfig.modelId;
+      }
+
+      return await sendHttpStreamingRequest(
+        url.hostname,
+        url.pathname,
+        "POST",
+        headers,
+        payload,
+        onResponse,
+        this.#forwardOpenaiResp,
       );
     } catch (error) {
       console.error("Error sending chat messages:", error);
@@ -280,6 +370,36 @@ export class CopilotChatClient {
                 }
               }
             }
+          } catch (error) {
+            console.error("Error parsing data:", error, data);
+          }
+        }
+      }
+    }
+
+    return {
+      parsedMessages,
+      remainBuffer,
+    };
+  }
+
+  #forwardOpenaiResp(buffer, incompleteResult) {
+    const respMessages = buffer.split("\n\n");
+    const remainBuffer = respMessages.pop();
+    let parsedMessages = [];
+
+    for (const respMessage of respMessages) {
+      if (!respMessage || respMessage.trim() === "") continue;
+
+      const lines = respMessage.split("\n");
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const data = line.slice(6);
+          if (data === "[DONE]") {
+            break;
+          }
+          try {
+            parsedMessages.push(JSON.parse(data));
           } catch (error) {
             console.error("Error parsing data:", error, data);
           }
