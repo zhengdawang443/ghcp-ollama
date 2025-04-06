@@ -1,6 +1,6 @@
 # GHCP-Ollama
 
-The [Ollama](https://github.com/ollama-dev/ollama) project provides a convenient way to interact with various LLMs (Large Language Models) via a simple API. 
+The [Ollama](https://github.com/ollama-dev/ollama) project provides a convenient way to interact with various LLMs (Large Language Models) via a simple API.
 This project aims to provide an Ollama-compatible API for interacting with the LLMs of GitHub Copilot.
 
 ## Features
@@ -68,24 +68,11 @@ npm start
 
 The server provides the following endpoints:
 
-- `GET /api/tags`: List available models (similar to Ollama)
+- `GET /api/tags`: List available models (similar to Ollama).
 
-- `POST /api/chat`: Have a conversation with a model
-  ```json
-  {
-    "model": "gpt-4o",
-    "messages": [
-      {
-        "role": "user",
-        "content": "Write a quicksort algorithm in Python"
-      }
-    ],
-    "stream": true,
-    "options": {
-      "temperature": 0.7
-    }
-  }
-  ```
+- `POST /api/chat`: The chat API with request/response in Ollama format.
+
+- `POST /v1/chat/completions`: The chat API with request/response in OpenAI format (also supported in Ollama).
 
 Since the server implements the same API endpoints as Ollama, you can use it with any tool that supports Ollama.
 
@@ -98,14 +85,24 @@ curl http://localhost:11434/api/tags
 
 - Chat with text messages
 ```bash
-node tests/ollama_textmsg_test.js
+node tests/ollama_textmsg_test.js [--no-stream]
+
+# or in OpenAI format
+node tests/openai_textmsg_test.js [--no-stream]
 ```
 
 - Chat with tools
 ```bash
-node tests/ollama_tools_test.js
+node tests/ollama_tools_test.js [--no-stream]
+
+#or in OpenAI format
+node tests/openai_tools_test.js [--no-stream]
 ```
+
 - Chat with image input
 ```bash
-node tests/ollama_image_test.js
+node tests/ollama_image_test.js [--no-stream]
+
+# or in OpenAI format
+node tests/openai_image_test.js [--no-stream]
 ```
