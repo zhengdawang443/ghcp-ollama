@@ -2,6 +2,13 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
+// Usage: node openai_image_test.js [--no-stream]
+// --no-stream: Use non-streaming mode (default: streaming enabled)
+
+// Parse command line arguments with a default value of true for stream
+const args = process.argv.slice(2);
+const stream = args.includes("--no-stream") ? false : true;
+
 function encodeImageToBase64(imagePath) {
   const image = fs.readFileSync(imagePath);
   return image.toString("base64");
@@ -30,7 +37,7 @@ const payload = {
       ],
     },
   ],
-  stream: true,
+  stream: stream,
 };
 
 async function chat() {
@@ -45,28 +52,35 @@ async function chat() {
 
     let fullResponse = "";
 
-    // Create a stream reader
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
+    if (stream) {
+      // Create a stream reader
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
 
-      // Decode the stream chunk and split by lines
-      const chunk = decoder.decode(value);
-      const lines = chunk.split("\n").filter((line) => line.trim());
+        // Decode the stream chunk and split by lines
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n").filter((line) => line.trim());
 
-      for (const line of lines) {
-        console.log("Chunk received:", line);
-        if (line.includes("[DONE]")) {
-          break;
+        for (const line of lines) {
+          console.log("Chunk received:", line);
+          if (line.includes("[DONE]")) {
+            break;
+          }
+
+          const data = JSON.parse(line.slice(6));
+          if (data.choices.length > 0) {
+            fullResponse += data.choices[0].delta.content;
+          }
         }
-
-        const data = JSON.parse(line.slice(6));
-        if (data.choices.length > 0) {
-          fullResponse += data.choices[0].delta.content;
-        }
+      }
+    } else {
+      const data = await response.json();
+      for (const choice of data.choices) {
+        fullResponse += choice.message.content;
       }
     }
 

@@ -5,7 +5,7 @@
 
 import { CopilotAuth } from "./auth_client.js";
 import { CopilotModels } from "./model_client.js";
-import { sendHttpStreamingRequest } from "./http_utils.js";
+import { sendHttpRequest, sendHttpStreamingRequest } from "./http_utils.js";
 import { editorConfig } from "../config.js";
 
 export class CopilotChatClient {
@@ -49,6 +49,33 @@ export class CopilotChatClient {
   }
 
   /**
+   * Sends a non-streaming chat request to the Copilot API.
+   *
+   * @param {Array} messages - Array of chat messages to send
+   * @param {Object} [options={}] - Additional options for the request
+   * @param {Array|null} [tools=null] - Array of tools available to the model
+   * @param {boolean} [refreshToken=true] - Whether to attempt token refresh if invalid
+   *
+   * @returns {object} Response of the non-streaming call
+   */
+  async sendRequest(messages, options = {}, tools = null, refreshToken = true) {
+    try {
+      const tokenStatus = await this.#checkGithubToken(refreshToken);
+      if (!tokenStatus.success) {
+        return tokenStatus;
+      }
+
+      return await this.#doSendRequest(messages, null, options, tools, false);
+    } catch (error) {
+      console.error("Error sending chat messages:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
    * Sends a streaming OpenAI chat request to the Copilot API.
    *
    * @param {Array} payload - The request of OpanAI request
@@ -65,6 +92,31 @@ export class CopilotChatClient {
       }
 
       return await this.#doSendOpenaiRequest(payload, onResponse);
+    } catch (error) {
+      console.error("Error sending chat messages:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Sends a non-streaming OpenAI chat request to the Copilot API.
+   *
+   * @param {Array} payload - The request of OpanAI request
+   * @param {boolean} [refreshToken=true] - Whether to attempt token refresh if invalid
+   *
+   * @returns {object} Response of the non-streaming call
+   */
+  async sendOpenaiRequest(payload, refreshToken = true) {
+    try {
+      const tokenStatus = await this.#checkGithubToken(refreshToken);
+      if (!tokenStatus.success) {
+        return tokenStatus;
+      }
+
+      return await this.#doSendOpenaiRequest(payload);
     } catch (error) {
       console.error("Error sending chat messages:", error);
       return {
@@ -140,15 +192,29 @@ export class CopilotChatClient {
         stream,
       );
 
-      return await sendHttpStreamingRequest(
-        url.hostname,
-        url.pathname,
-        "POST",
-        headers,
-        payload,
-        onResponse,
-        this.#parseToOllamaResp,
-      );
+      if (stream) {
+        return await sendHttpStreamingRequest(
+          url.hostname,
+          url.pathname,
+          "POST",
+          headers,
+          payload,
+          onResponse,
+          this.#parseToOllamaResp,
+        );
+      } else {
+        const response = await sendHttpRequest(
+          url.hostname,
+          url.pathname,
+          "POST",
+          headers,
+          payload,
+        );
+        return {
+          success: true,
+          data: this.#parseToNonStreamingOllamaResp(response.data),
+        };
+      }
     } catch (error) {
       console.error("Error sending chat messages:", error);
       return {
@@ -158,7 +224,7 @@ export class CopilotChatClient {
     }
   }
 
-  async #doSendOpenaiRequest(payload, onResponse) {
+  async #doSendOpenaiRequest(payload, onResponse = null) {
     const { token, endpoint } = this.auth.getGithubToken();
     if (!token) {
       return {
@@ -174,6 +240,7 @@ export class CopilotChatClient {
     }
 
     try {
+      const stream = payload.stream !== undefined ? payload.stream : false;
       const url = new URL(`${endpoint}/chat/completions`);
       const headers = {
         Authorization: `Bearer ${token}`,
@@ -196,15 +263,25 @@ export class CopilotChatClient {
         payload.model = defaultModel.modelConfig.modelId;
       }
 
-      return await sendHttpStreamingRequest(
-        url.hostname,
-        url.pathname,
-        "POST",
-        headers,
-        payload,
-        onResponse,
-        this.#forwardOpenaiResp,
-      );
+      if (stream) {
+        return await sendHttpStreamingRequest(
+          url.hostname,
+          url.pathname,
+          "POST",
+          headers,
+          payload,
+          onResponse,
+          this.#forwardOpenaiResp,
+        );
+      } else {
+        return await sendHttpRequest(
+          url.hostname,
+          url.pathname,
+          "POST",
+          headers,
+          payload,
+        );
+      }
     } catch (error) {
       console.error("Error sending chat messages:", error);
       return {
@@ -383,7 +460,36 @@ export class CopilotChatClient {
     };
   }
 
-  #forwardOpenaiResp(buffer, incompleteResult) {
+  #parseToNonStreamingOllamaResp(openaiResp) {
+    const model = openaiResp.model;
+    const createTimeString = openaiResp.created
+      ? new Date(openaiResp.created * 1000).toISOString()
+      : new Date().toISOString();
+    const prompt_eval_count = openaiResp.usage.prompt_tokens || 0;
+    const eval_count = openaiResp.usage.completion_tokens || 0;
+    const parsedMessage = {
+      role: "assistant",
+      content: "",
+    };
+    for (const choice of openaiResp.choices) {
+      if (choice.message?.content) {
+        parsedMessage.content += choice.message.content;
+      }
+      if (choice.message?.tool_calls) {
+        parsedMessage.tool_calls = choice.message.tool_calls;
+      }
+    }
+    return {
+      model: model,
+      created_at: createTimeString,
+      message: parsedMessage,
+      done: true,
+      prompt_eval_count: prompt_eval_count,
+      eval_count: eval_count,
+    };
+  }
+
+  #forwardOpenaiResp(buffer, _) {
     const respMessages = buffer.split("\n\n");
     const remainBuffer = respMessages.pop();
     let parsedMessages = [];

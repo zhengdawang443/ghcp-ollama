@@ -134,7 +134,7 @@ async function handleModelFetchRequest(req, res) {
 async function handleChatRequest(req, res) {
   const model = req.body.model || "gpt-4o-2024-11-20";
   const messages = req.body.messages || [];
-  const stream = req.body.stream !== false;
+  const stream = req.body.stream !== undefined ? req.body.stream : false;
   const options = req.body.options || {};
   options.model = model;
   const tools = req.body.tools || [];
@@ -172,10 +172,15 @@ async function handleChatRequest(req, res) {
         res.end();
       }
     } else {
-      return res.status(400).json({
-        error: "Bad Request",
-        message: "Please request with streaming enabled",
-      });
+      const result = await chatClient.sendRequest(messages, options, tools);
+      if (result.success) {
+        return res.json(result.data);
+      } else {
+        return res.status(500).json({
+          error: "Failed to generate text",
+          message: result.error,
+        });
+      }
     }
   } catch (error) {
     console.error("Error in chat request:", error);
@@ -188,7 +193,7 @@ async function handleChatRequest(req, res) {
 
 async function handleOpenAIChatRequest(req, res) {
   try {
-    const stream = req.body.stream !== false;
+    const stream = req.body.stream !== undefined ? req.body.stream : false;
     if (stream) {
       // Set headers for response
       res.setHeader("Content-Type", "application/json");
@@ -219,10 +224,15 @@ async function handleOpenAIChatRequest(req, res) {
         res.end();
       }
     } else {
-      return res.status(400).json({
-        error: "Bad Request",
-        message: "Please request with streaming enabled",
-      });
+      const result = await chatClient.sendOpenaiRequest(req.body);
+      if (result.success) {
+        return res.json(result.data);
+      } else {
+        return res.status(500).json({
+          error: "Failed to generate text",
+          message: result.error,
+        });
+      }
     }
   } catch (error) {
     console.error("Error in chat request:", error);

@@ -1,3 +1,10 @@
+// Usage: node ollama_tools_test.js [--no-stream]
+// --no-stream: Use non-streaming mode (default: streaming enabled)
+
+// Parse command line arguments with a default value of true for stream
+const args = process.argv.slice(2);
+const stream = args.includes('--no-stream') ? false : true;
+
 const payload = {
   model: "claude-3.5-sonnet",
   messages: [
@@ -59,7 +66,7 @@ const payload = {
     },
   ],
   tool_choice: "auto",
-  stream: true,
+  stream: stream,
 };
 
 async function chat() {

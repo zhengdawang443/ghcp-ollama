@@ -1,3 +1,10 @@
+// Usage: node openai_tools_test.js [--no-stream]
+// --no-stream: Use non-streaming mode (default: streaming enabled)
+
+// Parse command line arguments with a default value of true for stream
+const args = process.argv.slice(2);
+const stream = args.includes('--no-stream') ? false : true;
+
 const payload = {
   model: "claude-3.5-sonnet",
   messages: [
@@ -59,7 +66,7 @@ const payload = {
     },
   ],
   tool_choice: "auto",
-  stream: true,
+  stream: stream,
 };
 
 async function chat() {
@@ -78,39 +85,60 @@ async function chat() {
       arguments: "",
     };
 
-    // Create a stream reader
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
+    if (stream) {
+      // Create a stream reader
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
 
-      // Decode the stream chunk and split by lines
-      const chunk = decoder.decode(value);
-      const lines = chunk.split("\n").filter((line) => line.trim());
+        // Decode the stream chunk and split by lines
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n").filter((line) => line.trim());
 
-      for (const line of lines) {
-        console.log("Chunk received:", line);
-        if (line.includes("[DONE]")) {
-          break;
-        }
-        const data = JSON.parse(line.slice(6));
+        for (const line of lines) {
+          console.log("Chunk received:", line);
+          if (line.includes("[DONE]")) {
+            break;
+          }
+          const data = JSON.parse(line.slice(6));
 
-        if (data.choices.length > 0) {
-          const choice = data.choices[0];
-          if (choice.delta?.tool_calls) {
-            if (choice.delta.tool_calls[0].function.name) {
-              toolResponse.name += choice.delta.tool_calls[0].function.name;
+          if (data.choices.length > 0) {
+            const choice = data.choices[0];
+            if (choice.delta?.tool_calls) {
+              if (choice.delta.tool_calls[0].function.name) {
+                toolResponse.name += choice.delta.tool_calls[0].function.name;
+              }
+              if (choice.delta.tool_calls[0].function.arguments) {
+                toolResponse.arguments +=
+                  choice.delta.tool_calls[0].function.arguments;
+              }
             }
-            if (choice.delta.tool_calls[0].function.arguments) {
-              toolResponse.arguments +=
-                choice.delta.tool_calls[0].function.arguments;
+
+            if (choice.delta?.content) {
+              textResponse += choice.delta.content;
+            }
+          }
+        }
+      }
+    } else {
+      const data = await response.json();
+      if (data.choices.length > 0) {
+        for (const choice of data.choices) {
+          if (choice.message.tool_calls) {
+            if (choice.message.tool_calls[0].function.name) {
+              toolResponse.name = choice.message.tool_calls[0].function.name;
+            }
+            if (choice.message.tool_calls[0].function.arguments) {
+              toolResponse.arguments =
+                choice.message.tool_calls[0].function.arguments;
             }
           }
 
-          if (choice.delta?.content) {
-            textResponse += choice.delta.content;
+          if (choice.message.content) {
+            textResponse += choice.message.content;
           }
         }
       }
