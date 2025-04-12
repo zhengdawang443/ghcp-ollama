@@ -3,22 +3,18 @@
 
 // Parse command line arguments with a default value of true for stream
 const args = process.argv.slice(2);
-const stream = args.includes('--no-stream') ? false : true;
+const stream = args.includes("--no-stream") ? false : true;
 
 const payload = {
   model: "claude-3.5-sonnet",
   messages: [
     {
-      role: "user",
-      content: "why is the sky blue?",
-    },
-    {
-      role: "assistant",
-      content: "due to rayleigh scattering.",
+      role: "system",
+      content: "You should use tools to get information. You can use multple tools for one query.",
     },
     {
       role: "user",
-      content: "what's the weather in Beijing?",
+      content: "What's the time and weather in Beijing now?",
     },
   ],
   tools: [
@@ -80,10 +76,8 @@ async function chat() {
     });
 
     let textResponse = "";
-    let toolResponse = {
-      name: "",
-      arguments: "",
-    };
+    let toolResponses = {};
+    let currentToolCall = null;
 
     if (stream) {
       // Create a stream reader
@@ -106,34 +100,45 @@ async function chat() {
           const data = JSON.parse(line.slice(6));
 
           if (data.choices.length > 0) {
-            const choice = data.choices[0];
-            if (choice.delta?.tool_calls) {
-              if (choice.delta.tool_calls[0].function.name) {
-                toolResponse.name += choice.delta.tool_calls[0].function.name;
+            for (const choice of data.choices) {
+              if (choice.delta?.tool_calls) {
+                for (const toolCall of choice.delta.tool_calls) {
+                  if (toolCall.function.name) {
+                    toolResponses[toolCall.function.name] = {
+                      name: toolCall.function.name,
+                      arguments: "",
+                    };
+                    currentToolCall = toolResponses[toolCall.function.name];
+                  }
+                  if (currentToolCall && toolCall.function.arguments) {
+                    currentToolCall.arguments += toolCall.function.arguments;
+                  }
+                }
               }
-              if (choice.delta.tool_calls[0].function.arguments) {
-                toolResponse.arguments +=
-                  choice.delta.tool_calls[0].function.arguments;
-              }
-            }
 
-            if (choice.delta?.content) {
-              textResponse += choice.delta.content;
+              if (choice.delta?.content) {
+                textResponse += choice.delta.content;
+              }
             }
           }
         }
       }
     } else {
       const data = await response.json();
+      console.log("Response received:", JSON.stringify(data, null, 2));
       if (data.choices.length > 0) {
         for (const choice of data.choices) {
           if (choice.message.tool_calls) {
-            if (choice.message.tool_calls[0].function.name) {
-              toolResponse.name = choice.message.tool_calls[0].function.name;
-            }
-            if (choice.message.tool_calls[0].function.arguments) {
-              toolResponse.arguments =
-                choice.message.tool_calls[0].function.arguments;
+            for (const toolCall of choice.message.tool_calls) {
+              if (toolCall.function.name) {
+                toolResponses[toolCall.function.name] = {
+                  name: toolCall.function.name,
+                };
+                if (toolCall.function.arguments) {
+                  toolResponses[toolCall.function.name].arguments =
+                    toolCall.function.arguments;
+                }
+              }
             }
           }
 
@@ -147,7 +152,10 @@ async function chat() {
     console.log("====================\n");
     console.log("Text Response:\n", textResponse);
     console.log("\n====================\n");
-    console.log("Tool Response:\n", toolResponse);
+    console.log("Tool Response:\n");
+    for (const toolName in toolResponses) {
+      console.log(JSON.stringify(toolResponses[toolName], null, 2));
+    }
   } catch (error) {
     console.error("Error:", error);
   }

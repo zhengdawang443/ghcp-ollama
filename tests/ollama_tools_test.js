@@ -3,22 +3,19 @@
 
 // Parse command line arguments with a default value of true for stream
 const args = process.argv.slice(2);
-const stream = args.includes('--no-stream') ? false : true;
+const stream = args.includes("--no-stream") ? false : true;
 
 const payload = {
   model: "claude-3.5-sonnet",
   messages: [
     {
-      role: "user",
-      content: "why is the sky blue?",
-    },
-    {
-      role: "assistant",
-      content: "due to rayleigh scattering.",
+      role: "system",
+      content:
+        "You should use tools to get information. You can use multple tools for one query.",
     },
     {
       role: "user",
-      content: "what's the weather in Beijing?",
+      content: "What's the time and weather in Beijing now?",
     },
   ],
   tools: [
@@ -80,45 +77,57 @@ async function chat() {
     });
 
     let textResponse = "";
-    let toolResponse = {
-      name: "",
-      arguments: "",
-    };
+    let toolResponses = {};
+    let currentToolCall = null;
 
-    // Create a stream reader
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
+    if (stream) {
+      // Create a stream reader
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
 
-      // Decode the stream chunk and split by lines
-      const chunk = decoder.decode(value);
-      const lines = chunk.split("\n").filter((line) => line.trim());
+        // Decode the stream chunk and split by lines
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n").filter((line) => line.trim());
 
-      for (const line of lines) {
-        const data = JSON.parse(line);
-        console.log("Chunk received:", JSON.stringify(data));
+        for (const line of lines) {
+          const data = JSON.parse(line);
+          console.log("Chunk received:", JSON.stringify(data));
 
-        if (data.message?.tool_calls) {
-          if (data.message.tool_calls[0].function.name) {
-            toolResponse.name += data.message.tool_calls[0].function.name;
+          if (data.message?.tool_calls) {
+            for (const toolCall of data.message.tool_calls) {
+              if (toolCall.function.name) {
+                toolResponses[toolCall.function.name] = {
+                  name: toolCall.function.name,
+                };
+                currentToolCall = toolResponses[toolCall.function.name];
+              }
+              if (currentToolCall && toolCall.function.arguments) {
+                currentToolCall.arguments = toolCall.function.arguments;
+              }
+            }
           }
-          if (data.message.tool_calls[0].function.arguments) {
-            toolResponse.arguments += JSON.stringify(
-              data.message.tool_calls[0].function.arguments,
-            );
+          if (data.message?.content) {
+            textResponse += data.message.content;
           }
         }
-
-        if (data.message?.content) {
-          textResponse += data.message.content;
+      }
+    } else {
+      const data = await response.json();
+      console.log("Response received:", JSON.stringify(data, null, 2));
+      textResponse = data.message.content;
+      for (const toolCall of data.message.tool_calls) {
+        if (toolCall.function.name) {
+          toolResponses[toolCall.function.name] = {
+            name: toolCall.function.name,
+          };
         }
-
-        if (data.done) {
-          console.log("Stream finished.\n");
-          break;
+        if (toolCall.function.arguments) {
+          toolResponses[toolCall.function.name].arguments =
+            toolCall.function.arguments;
         }
       }
     }
@@ -126,7 +135,10 @@ async function chat() {
     console.log("====================\n");
     console.log("Text Response:\n", textResponse);
     console.log("\n====================\n");
-    console.log("Tool Response:\n", toolResponse);
+    console.log("Tool Response:\n");
+    for (const toolName in toolResponses) {
+      console.log(JSON.stringify(toolResponses[toolName], null, 2));
+    }
   } catch (error) {
     console.error("Error:", error);
   }

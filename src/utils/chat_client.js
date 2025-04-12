@@ -358,23 +358,30 @@ export class CopilotChatClient {
         if (line.startsWith("data: ")) {
           const data = line.slice(6);
           if (data === "[DONE]") {
-            if (incompleteResult.function) {
+            if (
+              incompleteResult.functions &&
+              Object.keys(incompleteResult.functions).length > 0
+            ) {
+              const toolCalls = Object.values(incompleteResult.functions).map(
+                (func) => ({
+                  function: { ...func },
+                }),
+              );
+
               const toolCallMessage = {
                 done: false,
-                message: incompleteResult.message || {
+                message: {
                   role: "assistant",
                   content: "",
-                  tool_calls: [
-                    {
-                      function: { ...incompleteResult.function },
-                    },
-                  ],
+                  tool_calls: toolCalls,
                 },
+                model: incompleteResult.model || "",
                 created_at:
-                  incompleteResult.createTimeString || new Date().toISOString(),
+                  incompleteResult.created_at || new Date().toISOString(),
               };
               parsedMessages.push(toolCallMessage);
-              delete incompleteResult.function;
+              incompleteResult.currentToolFunc = null;
+              delete incompleteResult.functions;
             }
             const parsedMessage = {
               ...incompleteResult,
@@ -398,12 +405,19 @@ export class CopilotChatClient {
               if (choice.finish_reason) {
                 if (
                   choice.finish_reason === "tool_calls" &&
-                  incompleteResult.function &&
-                  incompleteResult.function.arguments
+                  incompleteResult.functions
                 ) {
-                  incompleteResult.function.arguments = JSON.parse(
-                    incompleteResult.function.arguments,
-                  );
+                  Object.values(incompleteResult.functions).forEach((func) => {
+                    if (func.arguments) {
+                      try {
+                        func.arguments = JSON.parse(func.arguments);
+                      } catch (e) {
+                        console.warn(
+                          `Failed to parse arguments for tool ${func.name}(${func.arguments}) : ${e.message}`,
+                        );
+                      }
+                    }
+                  });
                 }
                 const usage = parsed.usage;
                 if (usage) {
@@ -430,20 +444,32 @@ export class CopilotChatClient {
                   };
                   parsedMessages.push(parsedMessage);
                 }
-                if (choice.delta.tool_calls && choice.delta.tool_calls[0]) {
-                  const toolFunc = choice.delta.tool_calls[0].function;
-                  if (!incompleteResult.function) {
-                    incompleteResult.function = {};
+                if (
+                  choice.delta.tool_calls &&
+                  choice.delta.tool_calls.length > 0
+                ) {
+                  if (!incompleteResult.functions) {
+                    incompleteResult.functions = {};
+                    incompleteResult.currentToolFunc = null;
                   }
-                  if (toolFunc.name) {
-                    incompleteResult.function.name = toolFunc.name;
-                  }
-                  if (toolFunc.arguments) {
-                    if (!incompleteResult.function.arguments) {
-                      incompleteResult.function.arguments = "";
+                  if (!incompleteResult.model)
+                    incompleteResult.model = parsed.model;
+                  if (!incompleteResult.created_at)
+                    incompleteResult.created_at = createTimeString;
+
+                  choice.delta.tool_calls.forEach((toolCallDelta) => {
+                    const toolFunc = toolCallDelta.function;
+                    if (toolFunc.name) {
+                      incompleteResult.functions[toolFunc.name] = {
+                        name: toolFunc.name,
+                        arguments: "",
+                      };
+                      incompleteResult.currentToolFunc = incompleteResult.functions[toolFunc.name];
                     }
-                    incompleteResult.function.arguments += toolFunc.arguments;
-                  }
+                    if (toolFunc.arguments) {
+                      incompleteResult.currentToolFunc.arguments += toolFunc.arguments;
+                    }
+                  });
                 }
               }
             }
@@ -476,8 +502,15 @@ export class CopilotChatClient {
         parsedMessage.content += choice.message.content;
       }
       if (choice.message?.tool_calls) {
-        parsedMessage.tool_calls = choice.message.tool_calls;
+        if (!parsedMessage.tool_calls) {
+          parsedMessage.tool_calls = [];
+        }
+        parsedMessage.tool_calls.push(...choice.message.tool_calls);
       }
+    }
+    for (const toolCall of parsedMessage.tool_calls) {
+      if (!toolCall.function.arguments) continue;
+      toolCall.function.arguments = JSON.parse(toolCall.function.arguments);
     }
     return {
       model: model,
